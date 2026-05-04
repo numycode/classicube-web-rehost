@@ -361,6 +361,26 @@
       display: none;
     }
 
+    /* ---- Mouse-capture overlay ---- */
+    #mouse-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+      color: #E5E9F0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      z-index: 10;
+      user-select: none;
+      text-align: center;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+    }
+    #mouse-overlay.visible { display: flex; }
+
     /* ---- Custom scrollbar ---- */
     ::-webkit-scrollbar              { width: 6px; }
     ::-webkit-scrollbar-track        { background: transparent; }
@@ -474,6 +494,7 @@
   <div id="canvas-wrap">
     <!-- ClassiCube requirement: no border or padding on the canvas -->
     <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <div id="mouse-overlay" title="Click to capture mouse">🖱️ Click to capture mouse<br><span style="font-size:0.78rem;opacity:0.7;font-weight:400">Press Escape to release</span></div>
     <span id="logmsg"></span>
   </div>
 </div>
@@ -770,7 +791,24 @@ function joinServer(btn) {
  * For singleplayer, pass empty strings for mppass/ip/port.
  */
 function launchGame(username, mppass, ip, port, label) {
-  var args = ip ? [username, mppass, ip, port] : [username];
+  var args;
+  if (ip) {
+    // Validate before building the proxy URL
+    var safeIp   = String(ip).replace(/[^A-Za-z0-9.\-]/g, '');
+    var safePort = String(port).replace(/[^0-9]/g, '');
+    if (!safeIp || !safePort) {
+      setLog('Invalid server address. Cannot connect.');
+      return;
+    }
+    // ClassiCube's Emscripten interop builds the WebSocket URL as:
+    //   wss://{parts[0]}:{port}/{parts[1]}/...
+    // Route multiplayer through classicube.net's WebSocket-to-TCP proxy by
+    // encoding the real server address into the path on web.classicube.net:443.
+    var proxyAddr = 'web.classicube.net/' + safeIp + '/' + safePort;
+    args = [username, mppass, proxyAddr, '443'];
+  } else {
+    args = [username];
+  }
 
   document.getElementById('view-play').classList.add('active');
   document.getElementById('app-header').style.display = 'none';
@@ -877,6 +915,37 @@ function startEngine_(args) {
       if (text) Module.printErr('[post-exception] ' + text);
     };
   };
+
+  // ---- Pointer-lock handling ----
+  // ClassiCube requests pointer lock internally on mouse-click, but we add an
+  // explicit supplemental handler and a visible overlay so users always know
+  // how to (re-)capture the mouse after pressing Escape.
+  var canvas  = document.getElementById('canvas');
+  var overlay = document.getElementById('mouse-overlay');
+
+  function onPointerLockChange() {
+    if (document.pointerLockElement === canvas) {
+      overlay.classList.remove('visible');
+    } else if (state.gameActive) {
+      overlay.classList.add('visible');
+    }
+  }
+
+  document.addEventListener('pointerlockchange',       onPointerLockChange);
+  document.addEventListener('mozpointerlockchange',    onPointerLockChange);
+  document.addEventListener('webkitpointerlockchange', onPointerLockChange);
+
+  function requestLock() {
+    if (document.pointerLockElement !== canvas) {
+      canvas.requestPointerLock();
+    }
+  }
+
+  overlay.addEventListener('click', requestLock);
+  canvas.addEventListener('click',  requestLock);
+
+  // Show the overlay immediately so the user knows to click before the game loads
+  overlay.classList.add('visible');
 
   var script = document.createElement('script');
   script.async  = true;

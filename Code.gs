@@ -111,8 +111,9 @@ function loginToClassiCube(username, password, loginCode) {
 
     // ---- Step 2: submit credentials ----
     var postPayload = { username: username, password: password, token: getJson.token };
-    if (loginCode && typeof loginCode === 'string' && loginCode.trim().length > 0) {
-      postPayload.login_code = loginCode.trim();
+    var trimmedCode = loginCode && typeof loginCode === 'string' ? loginCode.trim() : '';
+    if (trimmedCode.length > 0) {
+      postPayload.login_code = trimmedCode;
     }
     var postResp = UrlFetchApp.fetch(CC_BASE + '/api/login/', {
       method:             'post',
