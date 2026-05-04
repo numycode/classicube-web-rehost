@@ -16,6 +16,7 @@ var SESSION_TTL      = 3600;   // seconds — ClassiCube session cookie lifetime
 var TEXTURE_PACK_TTL = 86400;  // seconds — texture pack is cached for 24 hours
 var RATE_LIMIT_MAX   = 5;      // max CC login attempts per window
 var RATE_LIMIT_TTL   = 600;    // seconds — rate-limit window (10 minutes)
+var MAX_PASSWORD_LEN = 200;    // generous upper bound; CC passwords are typically much shorter
 
 // Valid ClassiCube username: 1–16 chars, letters/digits/underscores
 var USERNAME_RE  = /^[A-Za-z0-9_]{1,16}$/;
@@ -75,7 +76,7 @@ function loginToClassiCube(username, password) {
   if (!username || !USERNAME_RE.test(username)) {
     return { success: false, error: 'Invalid username. Use 1–16 letters, digits, or underscores.' };
   }
-  if (!password || typeof password !== 'string' || password.length < 1 || password.length > 200) {
+  if (!password || typeof password !== 'string' || password.length < 1 || password.length > MAX_PASSWORD_LEN) {
     return { success: false, error: 'Invalid password.' };
   }
 
