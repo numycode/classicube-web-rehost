@@ -494,7 +494,7 @@
   <div id="canvas-wrap">
     <!-- ClassiCube requirement: no border or padding on the canvas -->
     <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-    <div id="mouse-overlay" title="Click to capture mouse">🖱️ Click to capture mouse<br><span style="font-size:0.78rem;opacity:0.7;font-weight:400">Press Escape to release</span></div>
+    <button id="mouse-overlay" type="button" title="Click to capture mouse" aria-label="Click to capture mouse. Press Escape to release.">🖱️ Click to capture mouse<br><span style="font-size:0.78rem;opacity:0.7;font-weight:400">Press Escape to release</span></button>
     <span id="logmsg"></span>
   </div>
 </div>
