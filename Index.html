@@ -413,6 +413,11 @@
           <label>Password</label>
           <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password">
         </div>
+        <div class="field" id="field-2fa" style="display:none">
+          <label>Two-Factor Code</label>
+          <input id="login-2fa" type="text" placeholder="Check your email for a code"
+                 autocomplete="one-time-code" maxlength="16">
+        </div>
         <button id="btn-login" class="btn btn-primary btn-block" onclick="doLogin(this)">Sign In</button>
         <div class="divider">or</div>
         <button class="btn btn-gray btn-block" onclick="startSingleplayerOnly()">
@@ -577,8 +582,10 @@ function focusLoginField() {
 // ClassiCube login / logout
 // ----------------------------------------------------------------
 function doLogin(btn) {
-  var user = document.getElementById('login-user').value.trim();
-  var pass = document.getElementById('login-pass').value;
+  var user    = document.getElementById('login-user').value.trim();
+  var pass    = document.getElementById('login-pass').value;
+  var twoFa   = document.getElementById('login-2fa').value.trim();
+  var needs2fa = document.getElementById('field-2fa').style.display !== 'none';
 
   if (!user || !pass) {
     showAlert('login-error', 'Please enter your ClassiCube username and password.');
@@ -587,6 +594,11 @@ function doLogin(btn) {
 
   if (!/^[A-Za-z0-9_]{1,16}$/.test(user)) {
     showAlert('login-error', 'Invalid username. Use 1–16 letters, digits, or underscores.');
+    return;
+  }
+
+  if (needs2fa && !twoFa) {
+    showAlert('login-error', 'Please enter the two-factor code from your email.');
     return;
   }
 
@@ -602,6 +614,11 @@ function doLogin(btn) {
         state.verified   = r.verified !== false;
         showCcBadge(r.username);
         showHome();
+      } else if (r.needsTwoFactor) {
+        // Show the 2FA field and prompt the user
+        document.getElementById('field-2fa').style.display = 'block';
+        showAlert('login-error', 'A two-factor code was sent to your email. Enter it above and sign in again.');
+        document.getElementById('login-2fa').focus();
       } else {
         showAlert('login-error', r.error || 'Login failed.');
       }
@@ -610,7 +627,7 @@ function doLogin(btn) {
       setReady(btn, 'Sign In');
       showAlert('login-error', 'A server error occurred. Please try again.');
     })
-    .loginToClassiCube(user, pass);
+    .loginToClassiCube(user, pass, twoFa);
 }
 
 /**
@@ -635,6 +652,8 @@ function logout() {
   hideCcBadge();
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('login-2fa').value  = '';
+  document.getElementById('field-2fa').style.display = 'none';
   showView('view-login');
   focusLoginField();
 }
@@ -950,10 +969,20 @@ window.addEventListener('resize', function () {
 
 // Keyboard shortcuts for the login form
 document.getElementById('login-pass').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') document.getElementById('btn-login').click();
+  if (e.key === 'Enter') {
+    var f2fa = document.getElementById('field-2fa');
+    if (f2fa.style.display !== 'none') {
+      document.getElementById('login-2fa').focus();
+    } else {
+      document.getElementById('btn-login').click();
+    }
+  }
 });
 document.getElementById('login-user').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') document.getElementById('login-pass').focus();
+});
+document.getElementById('login-2fa').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('btn-login').click();
 });
 </script>
 </body>

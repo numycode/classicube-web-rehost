@@ -64,12 +64,15 @@ function getGoogleUser() {
  * Flow (per the ClassiCube Web API docs):
  *   1. GET /api/login/ → JSON { token } + "session" cookie
  *   2. POST /api/login/ with username, password, token → JSON { username, authenticated, errors }
+ *      If errors contains "login_code", a 2FA/email code is required.
+ *   3. (optional) Re-call with loginCode populated to complete 2FA.
  *
  * Returns:
  *   { success: true,  username, verified }
+ *   { success: false, needsTwoFactor: true }   — 2FA code required
  *   { success: false, error }
  */
-function loginToClassiCube(username, password) {
+function loginToClassiCube(username, password, loginCode) {
   var callerEmail = getCurrentUserEmail_();
 
   // Input validation
@@ -107,9 +110,13 @@ function loginToClassiCube(username, password) {
     var getCookies = parseCookieHeaders_(getResp.getAllHeaders()['Set-Cookie']);
 
     // ---- Step 2: submit credentials ----
+    var postPayload = { username: username, password: password, token: getJson.token };
+    if (loginCode && typeof loginCode === 'string' && loginCode.trim().length > 0) {
+      postPayload.login_code = loginCode.trim();
+    }
     var postResp = UrlFetchApp.fetch(CC_BASE + '/api/login/', {
       method:             'post',
-      payload:            { username: username, password: password, token: getJson.token },
+      payload:            postPayload,
       headers: {
         'Cookie':  cookiesToHeader_(getCookies),
         'Referer': CC_BASE + '/api/login/'
@@ -126,10 +133,15 @@ function loginToClassiCube(username, password) {
       username:     'That username does not exist.',
       password:     'Incorrect password.',
       verification: 'Your ClassiCube account has not been verified yet (check your email). ' +
-                    'You can still play singleplayer, but multiplayer requires a verified account.'
+                    'You can still play singleplayer, but multiplayer requires a verified account.',
+      login_code:   'A two-factor authentication code is required.'
     };
 
     var errors = postJson.errors || [];
+    // "login_code" signals that a 2FA code is required — tell the front-end to prompt for it
+    if (errors.indexOf('login_code') !== -1) {
+      return { success: false, needsTwoFactor: true };
+    }
     // "verification" is a soft error — login still succeeded but multiplayer is blocked
     var hardErrors = errors.filter(function (e) { return e !== 'verification'; });
     if (hardErrors.length > 0) {
