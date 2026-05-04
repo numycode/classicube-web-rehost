@@ -444,7 +444,7 @@ function doLogin(btn) {
 
 function playAsGuest() {
   var name = prompt('Enter a display name to use in-game:', 'Guest');
-  if (name === null) return;                               // cancelled
+  if (name === null) return;                              // canceled
   name = (name.replace(/[^A-Za-z0-9_]/g, '') || 'Guest') // strip invalid chars
            .substring(0, 16);
   state.username     = name;
@@ -636,8 +636,8 @@ function patchRequests_() {
   if (window.fetch) {
     var origFetch = window.fetch;
     window.fetch = function (input, init) {
-      if (isTexturePack_(input)) input = textureUrl_();
-      return origFetch.call(this, input, init);
+      var resolvedUrl = isTexturePack_(input) ? textureUrl_() : input;
+      return origFetch.call(this, resolvedUrl, init);
     };
   }
 }

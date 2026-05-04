@@ -228,10 +228,10 @@ function cookiesToHeader_(cookieList) {
   return cookieList.map(function (c) { return c.name + '=' + c.value; }).join('; ');
 }
 
-function mergeCookieLists_(base, override) {
+function mergeCookieLists_(base, updates) {
   var map = {};
   base.forEach(    function (c) { map[c.name] = c.value; });
-  override.forEach(function (c) { map[c.name] = c.value; });
+  updates.forEach(function (c) { map[c.name] = c.value; });
   return Object.keys(map).map(function (k) { return { name: k, value: map[k] }; });
 }
 
