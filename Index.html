@@ -923,29 +923,53 @@ function startEngine_(args) {
   var canvas  = document.getElementById('canvas');
   var overlay = document.getElementById('mouse-overlay');
 
-  function onPointerLockChange() {
-    if (document.pointerLockElement === canvas) {
-      overlay.classList.remove('visible');
-    } else if (state.gameActive) {
-      overlay.classList.add('visible');
+  // Feature-detect Pointer Lock API (including vendor-prefixed variants).
+  var requestPointerLock_ = canvas.requestPointerLock
+                         || canvas.mozRequestPointerLock
+                         || canvas.webkitRequestPointerLock
+                         || null;
+
+  if (!requestPointerLock_) {
+    // Pointer Lock not supported — hide the overlay so it is never shown.
+    overlay.style.display = 'none';
+  } else {
+    // Normalise pointerLockElement access once.
+    function getPointerLockElement_() {
+      return document.pointerLockElement
+          || document.mozPointerLockElement
+          || document.webkitPointerLockElement
+          || null;
     }
-  }
 
-  document.addEventListener('pointerlockchange',       onPointerLockChange);
-  document.addEventListener('mozpointerlockchange',    onPointerLockChange);
-  document.addEventListener('webkitpointerlockchange', onPointerLockChange);
-
-  function requestLock() {
-    if (document.pointerLockElement !== canvas) {
-      canvas.requestPointerLock();
+    function onPointerLockChange() {
+      if (getPointerLockElement_() === canvas) {
+        overlay.classList.remove('visible');
+      } else if (state.gameActive) {
+        overlay.classList.add('visible');
+      }
     }
+
+    document.addEventListener('pointerlockchange',       onPointerLockChange);
+    document.addEventListener('mozpointerlockchange',    onPointerLockChange);
+    document.addEventListener('webkitpointerlockchange', onPointerLockChange);
+
+    function requestLock() {
+      if (getPointerLockElement_() !== canvas) {
+        try {
+          requestPointerLock_.call(canvas);
+        } catch (e) {
+          // requestPointerLock may throw if called outside a user-gesture context
+          console.warn('[CC] requestPointerLock failed:', e);
+        }
+      }
+    }
+
+    overlay.addEventListener('click', requestLock);
+    canvas.addEventListener('click',  requestLock);
+
+    // Show the overlay immediately so the user knows to click before the game loads
+    overlay.classList.add('visible');
   }
-
-  overlay.addEventListener('click', requestLock);
-  canvas.addEventListener('click',  requestLock);
-
-  // Show the overlay immediately so the user knows to click before the game loads
-  overlay.classList.add('visible');
 
   var script = document.createElement('script');
   script.async  = true;
