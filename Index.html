@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"                  content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable"    content="yes">
+  <title>ClassiCube Web</title>
+  <style>
+    /* ---- Reset ---- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+      overflow-x: hidden;
+    }
+
+    /* ---- App shell ---- */
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+    #app-header {
+      background: #1e2a3a;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      border-bottom: 2px solid #1d4ed8;
+      flex-shrink: 0;
+    }
+    #app-header h1 { font-size: 1.25rem; color: #60a5fa; font-weight: 700; letter-spacing: 0.3px; }
+    #user-badge {
+      margin-left: auto;
+      background: #1d4ed8;
+      color: #bfdbfe;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      display: none;
+    }
+
+    #app-body { flex: 1; overflow-y: auto; padding: 28px 20px; }
+
+    /* ---- Views ---- */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* ---- Centred single-column cards ---- */
+    .card {
+      background: #1e2a3a;
+      border: 1px solid #1d4ed8;
+      border-radius: 10px;
+      padding: 26px;
+      max-width: 520px;
+      margin: 0 auto 16px;
+    }
+    .card h2 { color: #60a5fa; margin-bottom: 18px; font-size: 1.05rem; }
+
+    /* ---- Form fields ---- */
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 0.82rem; color: #9ca3af; margin-bottom: 5px; }
+    input[type=text], input[type=password] {
+      width: 100%;
+      padding: 9px 13px;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      color: #e5e7eb;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #60a5fa; }
+
+    /* ---- Buttons ---- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.82; }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-block { display: flex; width: 100%; margin-top: 8px; }
+    .btn-primary { background: #1d4ed8; color: #fff; }
+    .btn-green   { background: #15803d; color: #fff; }
+    .btn-gray    { background: #374151; color: #e5e7eb; }
+    .btn-red     { background: #991b1b; color: #fff; }
+    .btn-sm      { padding: 6px 14px; font-size: 0.82rem; }
+
+    /* ---- Alerts ---- */
+    .alert {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.87rem;
+      margin-bottom: 14px;
+    }
+    .alert-error { background: #3b0f0f; border-left: 3px solid #ef4444; color: #fca5a5; }
+    .alert-info  { background: #1e3a5f; border-left: 3px solid #3b82f6; color: #93c5fd; }
+    .alert-warn  { background: #3b2a00; border-left: 3px solid #f59e0b; color: #fcd34d; }
+
+    /* ---- Divider ---- */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #4b5563;
+      font-size: 0.8rem;
+      margin: 16px 0;
+    }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #374151; }
+
+    /* ---- Server browser ---- */
+    .server-filters {
+      display: flex;
+      gap: 10px;
+      max-width: 900px;
+      margin: 0 auto 14px;
+    }
+    .server-filters input { flex: 1; }
+
+    #server-list { max-width: 900px; margin: 0 auto; }
+
+    .server-card {
+      background: #1e2a3a;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: border-color 0.15s;
+    }
+    .server-card:hover { border-color: #60a5fa; }
+    .sc-info { flex: 1; min-width: 0; }
+    .sc-name {
+      font-weight: 600;
+      color: #e5e7eb;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sc-meta { font-size: 0.76rem; color: #6b7280; margin-top: 2px; }
+    .sc-players { font-size: 0.82rem; color: #60a5fa; white-space: nowrap; flex-shrink: 0; }
+
+    /* ---- Spinner ---- */
+    .spinner-wrap { text-align: center; padding: 44px; color: #60a5fa; }
+    .spinner {
+      display: inline-block;
+      width: 36px; height: 36px;
+      border: 3px solid #1d4ed8;
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-bottom: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- Play overlay (full screen) ---- */
+    #view-play {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #000;
+      flex-direction: column;
+    }
+    #view-play.active { display: flex; }
+
+    #play-toolbar {
+      background: #111827;
+      border-bottom: 1px solid #1d4ed8;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #play-label {
+      flex: 1;
+      color: #9ca3af;
+      font-size: 0.82rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #canvas-wrap {
+      flex: 1;
+      position: relative;   /* needed for #logmsg overlay */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* ClassiCube requirement: canvas must have NO border or padding */
+    #canvas {
+      display: block;
+      border: 0;
+      padding: 0;
+      background: #000;
+    }
+
+    #logmsg {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #f87171;
+      font-size: 0.88rem;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 5px 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: nowrap;
+      display: none;
+    }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 600px) {
+      #app-body { padding: 14px 12px; }
+      .card { padding: 18px; }
+      .server-card { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ================================================================
+     App shell
+     ================================================================ -->
+<div id="app">
+  <div id="app-header">
+    <h1>⬛ ClassiCube Web</h1>
+    <div id="user-badge"></div>
+  </div>
+
+  <div id="app-body">
+
+    <!-- Initialising -->
+    <div id="view-init" class="view active">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <p>Loading…</p>
+      </div>
+    </div>
+
+    <!-- Login -->
+    <div id="view-login" class="view">
+      <div class="card">
+        <h2>🔑 Sign in to ClassiCube</h2>
+        <div id="login-error" class="alert alert-error" style="display:none"></div>
+        <div class="field">
+          <label>Username</label>
+          <input id="login-user" type="text" placeholder="ClassiCube username" autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <button id="btn-login" class="btn btn-primary btn-block" onclick="doLogin(this)">Sign In</button>
+        <div class="divider">or</div>
+        <button class="btn btn-gray btn-block" onclick="playAsGuest()">Continue as Guest</button>
+        <p style="font-size:0.76rem;color:#6b7280;margin-top:12px;text-align:center">
+          Guests can only play singleplayer. Sign in to join multiplayer servers.
+        </p>
+      </div>
+    </div>
+
+    <!-- Home -->
+    <div id="view-home" class="view">
+      <div class="card">
+        <h2>🎮 Play ClassiCube</h2>
+        <div id="home-warn" class="alert alert-warn" style="display:none"></div>
+        <button class="btn btn-green btn-block" style="margin-bottom:10px" onclick="startSingleplayer()">
+          🌍 Play Singleplayer
+        </button>
+        <button id="btn-browse" class="btn btn-primary btn-block" onclick="showServers()" style="display:none">
+          🖧 Browse Multiplayer Servers
+        </button>
+      </div>
+      <div style="text-align:center">
+        <button class="btn btn-gray btn-sm" onclick="logout()">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Server browser -->
+    <div id="view-servers" class="view">
+      <div class="server-filters">
+        <button class="btn btn-gray btn-sm" onclick="showView('view-home')">← Back</button>
+        <input id="server-search" type="text" placeholder="Search servers…" oninput="filterServers()">
+        <button class="btn btn-gray btn-sm" onclick="loadServers()">↻ Refresh</button>
+      </div>
+      <div id="servers-loading" class="spinner-wrap" style="display:none">
+        <div class="spinner"></div>
+        <p>Loading servers…</p>
+      </div>
+      <div id="servers-error" class="alert alert-error"
+           style="display:none; max-width:900px; margin:0 auto"></div>
+      <div id="server-list"></div>
+    </div>
+
+  </div><!-- /app-body -->
+</div><!-- /app -->
+
+<!-- ================================================================
+     Play overlay — outside #app so it covers the entire viewport
+     ================================================================ -->
+<div id="view-play">
+  <div id="play-toolbar">
+    <button class="btn btn-red btn-sm" onclick="exitGame()">✕ Exit</button>
+    <span id="play-label"></span>
+  </div>
+  <div id="canvas-wrap">
+    <!-- ClassiCube requirement: no border or padding on the canvas -->
+    <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <span id="logmsg"></span>
+  </div>
+</div>
+
+<!-- ================================================================
+     Application logic
+     ================================================================ -->
+<script>
+// ----------------------------------------------------------------
+// State
+// ----------------------------------------------------------------
+var state = {
+  sessionToken: localStorage.getItem('cc_session'),
+  username:     localStorage.getItem('cc_username'),
+  loggedIn:     false,
+  verified:     false,
+  servers:      [],
+  textureBlob:  null,
+  gameActive:   false
+};
+
+// ----------------------------------------------------------------
+// Boot — check for an existing session
+// ----------------------------------------------------------------
+window.addEventListener('DOMContentLoaded', function () {
+  if (state.sessionToken) {
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (r.valid) {
+          state.loggedIn = true;
+          state.verified = true;
+          state.username = r.username;
+          localStorage.setItem('cc_username', r.username);
+          showHome();
+        } else {
+          clearSession();
+          showView('view-login');
+        }
+      })
+      .withFailureHandler(function () { showView('view-login'); })
+      .verifySession(state.sessionToken);
+  } else {
+    showView('view-login');
+  }
+});
+
+// ----------------------------------------------------------------
+// View helpers
+// ----------------------------------------------------------------
+function showView(id) {
+  document.querySelectorAll('#app-body .view').forEach(function (v) {
+    v.classList.remove('active');
+  });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function showHome() {
+  // Show the username badge in the header
+  var badge = document.getElementById('user-badge');
+  badge.textContent  = '👤 ' + state.username;
+  badge.style.display = 'inline-block';
+
+  // Show the unverified-account warning when applicable
+  var warnEl = document.getElementById('home-warn');
+  if (state.loggedIn && !state.verified) {
+    warnEl.textContent  = 'Your account has not yet been verified. ' +
+                          'Multiplayer requires a verified ClassiCube account.';
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  // Only show the multiplayer button for verified, logged-in users
+  document.getElementById('btn-browse').style.display =
+    (state.loggedIn && state.verified) ? 'flex' : 'none';
+
+  showView('view-home');
+}
+
+// ----------------------------------------------------------------
+// Login
+// ----------------------------------------------------------------
+function doLogin(btn) {
+  var user = document.getElementById('login-user').value.trim();
+  var pass = document.getElementById('login-pass').value;
+
+  if (!user || !pass) {
+    showAlert('login-error', 'Please enter your username and password.');
+    return;
+  }
+
+  setBusy(btn, 'Signing in…');
+  hideAlert('login-error');
+
+  google.script.run
+    .withSuccessHandler(function (r) {
+      setReady(btn, 'Sign In');
+      if (r.success) {
+        state.sessionToken = r.sessionToken;
+        state.username     = r.username;
+        state.loggedIn     = true;
+        state.verified     = r.verified !== false;
+        localStorage.setItem('cc_session',  r.sessionToken);
+        localStorage.setItem('cc_username', r.username);
+        showHome();
+      } else {
+        showAlert('login-error', r.error || 'Login failed.');
+      }
+    })
+    .withFailureHandler(function () {
+      setReady(btn, 'Sign In');
+      showAlert('login-error', 'A server error occurred. Please try again.');
+    })
+    .loginToClassiCube(user, pass);
+}
+
+function playAsGuest() {
+  var name = prompt('Enter a display name to use in-game:', 'Guest');
+  if (name === null) return;                               // cancelled
+  name = (name.replace(/[^A-Za-z0-9_]/g, '') || 'Guest') // strip invalid chars
+           .substring(0, 16);
+  state.username     = name;
+  state.loggedIn     = false;
+  state.verified     = false;
+  state.sessionToken = null;
+  localStorage.setItem('cc_username', name);
+  localStorage.removeItem('cc_session');
+  showHome();
+}
+
+function logout() {
+  clearSession();
+  document.getElementById('user-badge').style.display = 'none';
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+  showView('view-login');
+}
+
+function clearSession() {
+  state.sessionToken = null;
+  state.username     = null;
+  state.loggedIn     = false;
+  state.verified     = false;
+  localStorage.removeItem('cc_session');
+  localStorage.removeItem('cc_username');
+}
+
+// ----------------------------------------------------------------
+// Server browser
+// ----------------------------------------------------------------
+function showServers() {
+  showView('view-servers');
+  loadServers();
+}
+
+function loadServers() {
+  document.getElementById('servers-loading').style.display = 'block';
+  document.getElementById('server-list').innerHTML = '';
+  hideAlert('servers-error');
+  state.servers = [];
+
+  google.script.run
+    .withSuccessHandler(function (r) {
+      document.getElementById('servers-loading').style.display = 'none';
+      if (r.success) {
+        state.servers = r.servers;
+        renderServers(state.servers);
+      } else {
+        showAlert('servers-error', r.error || 'Failed to load server list.');
+      }
+    })
+    .withFailureHandler(function () {
+      document.getElementById('servers-loading').style.display = 'none';
+      showAlert('servers-error', 'Failed to load server list. Please try again.');
+    })
+    .getServerList(state.sessionToken);
+}
+
+function filterServers() {
+  var q = document.getElementById('server-search').value.toLowerCase();
+  renderServers(
+    q ? state.servers.filter(function (s) {
+          return s.name.toLowerCase().indexOf(q) !== -1 ||
+                 (s.software || '').toLowerCase().indexOf(q) !== -1;
+        })
+      : state.servers
+  );
+}
+
+function renderServers(list) {
+  if (!list.length) {
+    document.getElementById('server-list').innerHTML =
+      '<div class="alert alert-info" style="max-width:900px;margin:0 auto">No servers found.</div>';
+    return;
+  }
+
+  var html = '';
+  list.forEach(function (s) {
+    var players  = (s.players || 0) + '/' + (s.maxplayers || 0);
+    var software = esc(s.software || 'ClassiCube');
+    var country  = s.country ? ' [' + s.country.toUpperCase() + ']' : '';
+    var star     = s.featured ? ' ⭐' : '';
+    html +=
+      '<div class="server-card">' +
+        '<div class="sc-info">' +
+          '<div class="sc-name">' + esc(s.name) + star + '</div>' +
+          '<div class="sc-meta">'  + software + country + '</div>' +
+        '</div>' +
+        '<div class="sc-players">' + players + '</div>' +
+        '<button class="btn btn-green btn-sm"' +
+                ' data-hash="' + esc(s.hash) + '"' +
+                ' onclick="joinServer(this)">Join</button>' +
+      '</div>';
+  });
+  document.getElementById('server-list').innerHTML = html;
+}
+
+// ----------------------------------------------------------------
+// Game
+// ----------------------------------------------------------------
+function startSingleplayer() {
+  launchGame(state.username, '', '', '', 'Singleplayer');
+}
+
+function joinServer(btn) {
+  var hash = btn.getAttribute('data-hash');
+  setBusy(btn, 'Connecting…');
+
+  google.script.run
+    .withSuccessHandler(function (r) {
+      setReady(btn, 'Join');
+      if (r.success) {
+        launchGame(state.username, r.mppass, r.ip, r.port, r.name);
+      } else {
+        alert('Could not connect: ' + r.error);
+      }
+    })
+    .withFailureHandler(function () {
+      setReady(btn, 'Join');
+      alert('Failed to fetch server info. Please try again.');
+    })
+    .getServerInfo(state.sessionToken, hash);
+}
+
+/**
+ * Switch to the play overlay and launch ClassiCube.
+ * For singleplayer, pass empty strings for mppass/ip/port.
+ */
+function launchGame(username, mppass, ip, port, label) {
+  var args = ip ? [username, mppass, ip, port] : [username];
+
+  document.getElementById('view-play').classList.add('active');
+  document.getElementById('app-header').style.display = 'none';
+  document.getElementById('play-label').textContent = label || 'ClassiCube';
+  setLog('Loading textures…');
+
+  // Install the XHR/fetch patch before any game scripts are added to the DOM
+  patchRequests_();
+
+  // Fetch texture pack via GAS proxy (avoids CORS on classicube.net/static/default.zip)
+  google.script.run
+    .withSuccessHandler(function (b64) {
+      if (b64) {
+        try {
+          var raw   = atob(b64);
+          var bytes = new Uint8Array(raw.length);
+          for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+          state.textureBlob = URL.createObjectURL(
+            new Blob([bytes], { type: 'application/zip' })
+          );
+        } catch (e) {
+          console.warn('Could not create texture blob URL:', e);
+        }
+      }
+      startEngine_(args);
+    })
+    .withFailureHandler(function () {
+      // Texture fetch failed — the game will still launch but textures may not load
+      startEngine_(args);
+    })
+    .getTexturePack();
+}
+
+/**
+ * Intercept XHR/fetch calls for the texture-pack path and redirect them to
+ * either the in-memory Blob URL (preferred) or classicube.net (fallback).
+ * Must be called before ClassiCube.js is loaded.
+ */
+function patchRequests_() {
+  if (window.__ccPatched) return;
+  window.__ccPatched = true;
+
+  function textureUrl_() {
+    return state.textureBlob || 'https://classicube.net/static/default.zip';
+  }
+
+  function isTexturePack_(u) {
+    return typeof u === 'string' &&
+           (u === '/static/default.zip' || u.slice(-12) === '/default.zip');
+  }
+
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    if (isTexturePack_(url)) arguments[1] = textureUrl_();
+    return origOpen.apply(this, arguments);
+  };
+
+  if (window.fetch) {
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      if (isTexturePack_(input)) input = textureUrl_();
+      return origFetch.call(this, input, init);
+    };
+  }
+}
+
+/**
+ * Initialise the Emscripten Module object and inject ClassiCube.js.
+ */
+function startEngine_(args) {
+  resizeCanvas_();
+  setLog('Loading game…');
+
+  window.Module = {
+    preRun:  [resizeCanvas_],
+    postRun: [],
+    arguments: args,
+    print: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.log(text);
+    },
+    printErr: function (text) {
+      if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+      console.error(text);
+    },
+    canvas: document.getElementById('canvas'),
+    setStatus: function (text) {
+      console.log('[CC]', text);
+      setLog(text);
+    },
+    totalDependencies: 0,
+    monitorRunDependencies: function (left) {
+      this.totalDependencies = Math.max(this.totalDependencies, left);
+      Module.setStatus(
+        left ? 'Preparing… (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')'
+             : 'All downloads complete.'
+      );
+    }
+  };
+
+  window.onerror = function (msg) {
+    Module.setStatus('Exception: ' + msg);
+    Module.setStatus = function (text) {
+      if (text) Module.printErr('[post-exception] ' + text);
+    };
+  };
+
+  var script = document.createElement('script');
+  script.async = true;
+  script.src   = 'https://cs.classicube.net/client/latest/ClassiCube.js';
+  script.onerror = function () {
+    setLog('Failed to load game script. Check your internet connection.');
+  };
+  document.body.appendChild(script);
+  state.gameActive = true;
+}
+
+/** Fit the canvas inside its wrapper maintaining a 16:9 aspect ratio. */
+function resizeCanvas_() {
+  var wrap   = document.getElementById('canvas-wrap');
+  var canvas = document.getElementById('canvas');
+  if (!wrap || !canvas) return;
+
+  var dpr    = window.devicePixelRatio || 1;
+  var avW    = wrap.clientWidth;
+  var avH    = wrap.clientHeight;
+  var aspect = 16 / 9;
+
+  var w, h;
+  if (avW / avH > aspect) { h = avH; w = Math.floor(h * aspect); }
+  else                     { w = avW; h = Math.floor(w / aspect); }
+
+  if (w % 2) w--;   // Emscripten prefers even dimensions
+  if (h % 2) h--;
+
+  canvas.width        = w * dpr;
+  canvas.height       = h * dpr;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+}
+
+/**
+ * Exit the game. Reloading is the cleanest way to tear down the
+ * WebAssembly runtime; localStorage keeps the session alive so the
+ * user lands back on the home screen without having to log in again.
+ */
+function exitGame() {
+  if (!confirm('Exit the game? Any unsaved progress will be lost.')) return;
+  location.reload();
+}
+
+function setLog(text) {
+  var el = document.getElementById('logmsg');
+  el.textContent  = text;
+  el.style.display = text ? 'block' : 'none';
+}
+
+// ----------------------------------------------------------------
+// Utilities
+// ----------------------------------------------------------------
+function esc(str) {
+  return String(str)
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;');
+}
+
+function showAlert(id, msg) {
+  var el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function hideAlert(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+function setBusy(btn, text)  { btn.disabled = true;  btn.textContent = text; }
+function setReady(btn, text) { btn.disabled = false; btn.textContent = text; }
+
+window.addEventListener('resize', function () {
+  if (state.gameActive) resizeCanvas_();
+});
+
+// Keyboard shortcuts for the login form
+document.getElementById('login-pass').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('btn-login').click();
+});
+document.getElementById('login-user').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('login-pass').focus();
+});
+</script>
+</body>
+</html>
