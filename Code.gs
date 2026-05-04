@@ -17,9 +17,12 @@ var TEXTURE_PACK_TTL = 86400;  // seconds — texture pack is cached for 24 hour
 var RATE_LIMIT_MAX   = 5;      // max CC login attempts per window
 var RATE_LIMIT_TTL   = 600;    // seconds — rate-limit window (10 minutes)
 var MAX_PASSWORD_LEN = 200;    // generous upper bound; CC passwords are typically much shorter
+var MAX_LOGIN_CODE_LEN = 32;   // generous upper bound for 2FA/email codes
 
 // Valid ClassiCube username: 1–16 chars, letters/digits/underscores
 var USERNAME_RE  = /^[A-Za-z0-9_]{1,16}$/;
+// Valid 2FA/email code: digits only (ClassiCube sends numeric codes)
+var LOGIN_CODE_RE = /^[0-9]+$/;
 // Server hashes returned by the ClassiCube API are 32-char hex strings
 var SERVER_HASH_RE = /^[0-9a-f]{32}$/i;
 
@@ -64,12 +67,15 @@ function getGoogleUser() {
  * Flow (per the ClassiCube Web API docs):
  *   1. GET /api/login/ → JSON { token } + "session" cookie
  *   2. POST /api/login/ with username, password, token → JSON { username, authenticated, errors }
+ *      If errors contains "login_code", a 2FA/email code is required.
+ *   3. (optional) Re-call with loginCode populated to complete 2FA.
  *
  * Returns:
  *   { success: true,  username, verified }
+ *   { success: false, needsTwoFactor: true }   — 2FA code required
  *   { success: false, error }
  */
-function loginToClassiCube(username, password) {
+function loginToClassiCube(username, password, loginCode) {
   var callerEmail = getCurrentUserEmail_();
 
   // Input validation
@@ -107,9 +113,22 @@ function loginToClassiCube(username, password) {
     var getCookies = parseCookieHeaders_(getResp.getAllHeaders()['Set-Cookie']);
 
     // ---- Step 2: submit credentials ----
+    var postPayload = { username: username, password: password, token: getJson.token };
+    if (loginCode !== undefined && loginCode !== null) {
+      if (typeof loginCode !== 'string') {
+        return { success: false, error: 'Invalid 2FA code.' };
+      }
+      var trimmedCode = loginCode.trim();
+      if (trimmedCode.length > 0) {
+        if (trimmedCode.length > MAX_LOGIN_CODE_LEN || !LOGIN_CODE_RE.test(trimmedCode)) {
+          return { success: false, error: 'Invalid 2FA code. Only digits are accepted.' };
+        }
+        postPayload.login_code = trimmedCode;
+      }
+    }
     var postResp = UrlFetchApp.fetch(CC_BASE + '/api/login/', {
       method:             'post',
-      payload:            { username: username, password: password, token: getJson.token },
+      payload:            postPayload,
       headers: {
         'Cookie':  cookiesToHeader_(getCookies),
         'Referer': CC_BASE + '/api/login/'
@@ -126,10 +145,15 @@ function loginToClassiCube(username, password) {
       username:     'That username does not exist.',
       password:     'Incorrect password.',
       verification: 'Your ClassiCube account has not been verified yet (check your email). ' +
-                    'You can still play singleplayer, but multiplayer requires a verified account.'
+                    'You can still play singleplayer, but multiplayer requires a verified account.',
+      login_code:   'A two-factor authentication code is required.'
     };
 
     var errors = postJson.errors || [];
+    // "login_code" signals that a 2FA code is required — tell the front-end to prompt for it
+    if (errors.indexOf('login_code') !== -1) {
+      return { success: false, needsTwoFactor: true };
+    }
     // "verification" is a soft error — login still succeeded but multiplayer is blocked
     var hardErrors = errors.filter(function (e) { return e !== 'verification'; });
     if (hardErrors.length > 0) {

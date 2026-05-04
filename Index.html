@@ -361,6 +361,26 @@
       display: none;
     }
 
+    /* ---- Mouse-capture overlay ---- */
+    #mouse-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+      color: #E5E9F0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      z-index: 10;
+      user-select: none;
+      text-align: center;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+    }
+    #mouse-overlay.visible { display: flex; }
+
     /* ---- Custom scrollbar ---- */
     ::-webkit-scrollbar              { width: 6px; }
     ::-webkit-scrollbar-track        { background: transparent; }
@@ -412,6 +432,11 @@
         <div class="field">
           <label>Password</label>
           <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <div class="field" id="field-2fa" style="display:none">
+          <label>Two-Factor Code</label>
+          <input id="login-2fa" type="text" placeholder="Check your email for a code"
+                 autocomplete="one-time-code" maxlength="16">
         </div>
         <button id="btn-login" class="btn btn-primary btn-block" onclick="doLogin(this)">Sign In</button>
         <div class="divider">or</div>
@@ -469,6 +494,7 @@
   <div id="canvas-wrap">
     <!-- ClassiCube requirement: no border or padding on the canvas -->
     <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <button id="mouse-overlay" type="button" title="Click to capture mouse" aria-label="Click to capture mouse. Press Escape to release.">🖱️ Click to capture mouse<br><span style="font-size:0.78rem;opacity:0.7;font-weight:400">Press Escape to release</span></button>
     <span id="logmsg"></span>
   </div>
 </div>
@@ -577,8 +603,10 @@ function focusLoginField() {
 // ClassiCube login / logout
 // ----------------------------------------------------------------
 function doLogin(btn) {
-  var user = document.getElementById('login-user').value.trim();
-  var pass = document.getElementById('login-pass').value;
+  var user    = document.getElementById('login-user').value.trim();
+  var pass    = document.getElementById('login-pass').value;
+  var twoFa   = document.getElementById('login-2fa').value.trim();
+  var needs2fa = document.getElementById('field-2fa').style.display !== 'none';
 
   if (!user || !pass) {
     showAlert('login-error', 'Please enter your ClassiCube username and password.');
@@ -587,6 +615,11 @@ function doLogin(btn) {
 
   if (!/^[A-Za-z0-9_]{1,16}$/.test(user)) {
     showAlert('login-error', 'Invalid username. Use 1–16 letters, digits, or underscores.');
+    return;
+  }
+
+  if (needs2fa && !twoFa) {
+    showAlert('login-error', 'Please enter the two-factor code from your email.');
     return;
   }
 
@@ -602,6 +635,11 @@ function doLogin(btn) {
         state.verified   = r.verified !== false;
         showCcBadge(r.username);
         showHome();
+      } else if (r.needsTwoFactor) {
+        // Show the 2FA field and prompt the user
+        document.getElementById('field-2fa').style.display = 'block';
+        showAlert('login-error', 'A two-factor code was sent to your email. Enter it above and sign in again.');
+        document.getElementById('login-2fa').focus();
       } else {
         showAlert('login-error', r.error || 'Login failed.');
       }
@@ -610,7 +648,7 @@ function doLogin(btn) {
       setReady(btn, 'Sign In');
       showAlert('login-error', 'A server error occurred. Please try again.');
     })
-    .loginToClassiCube(user, pass);
+    .loginToClassiCube(user, pass, twoFa);
 }
 
 /**
@@ -635,6 +673,8 @@ function logout() {
   hideCcBadge();
   document.getElementById('login-user').value = '';
   document.getElementById('login-pass').value = '';
+  document.getElementById('login-2fa').value  = '';
+  document.getElementById('field-2fa').style.display = 'none';
   showView('view-login');
   focusLoginField();
 }
@@ -751,7 +791,29 @@ function joinServer(btn) {
  * For singleplayer, pass empty strings for mppass/ip/port.
  */
 function launchGame(username, mppass, ip, port, label) {
-  var args = ip ? [username, mppass, ip, port] : [username];
+  // Guard against duplicate launches (e.g. double-click on Play/Join).
+  if (state.gameActive) return;
+  state.gameActive = true;
+
+  var args;
+  if (ip) {
+    // Validate before building the proxy URL
+    var safeIp   = String(ip).replace(/[^A-Za-z0-9.\-]/g, '');
+    var safePort = String(port).replace(/[^0-9]/g, '');
+    if (!safeIp || !safePort) {
+      state.gameActive = false;
+      setLog('Invalid server address. Cannot connect.');
+      return;
+    }
+    // ClassiCube's Emscripten interop builds the WebSocket URL as:
+    //   wss://{parts[0]}:{port}/{parts[1]}/...
+    // Route multiplayer through classicube.net's WebSocket-to-TCP proxy by
+    // encoding the real server address into the path on web.classicube.net:443.
+    var proxyAddr = 'web.classicube.net/' + safeIp + '/' + safePort;
+    args = [username, mppass, proxyAddr, '443'];
+  } else {
+    args = [username];
+  }
 
   document.getElementById('view-play').classList.add('active');
   document.getElementById('app-header').style.display = 'none';
@@ -859,6 +921,61 @@ function startEngine_(args) {
     };
   };
 
+  // ---- Pointer-lock handling ----
+  // ClassiCube requests pointer lock internally on mouse-click, but we add an
+  // explicit supplemental handler and a visible overlay so users always know
+  // how to (re-)capture the mouse after pressing Escape.
+  var canvas  = document.getElementById('canvas');
+  var overlay = document.getElementById('mouse-overlay');
+
+  // Feature-detect Pointer Lock API (including vendor-prefixed variants).
+  var requestPointerLock_ = canvas.requestPointerLock
+                         || canvas.mozRequestPointerLock
+                         || canvas.webkitRequestPointerLock
+                         || null;
+
+  if (!requestPointerLock_) {
+    // Pointer Lock not supported — hide the overlay so it is never shown.
+    overlay.style.display = 'none';
+  } else {
+    // Normalise pointerLockElement access once.
+    function getPointerLockElement_() {
+      return document.pointerLockElement
+          || document.mozPointerLockElement
+          || document.webkitPointerLockElement
+          || null;
+    }
+
+    function onPointerLockChange() {
+      if (getPointerLockElement_() === canvas) {
+        overlay.classList.remove('visible');
+      } else if (state.gameActive) {
+        overlay.classList.add('visible');
+      }
+    }
+
+    document.addEventListener('pointerlockchange',       onPointerLockChange);
+    document.addEventListener('mozpointerlockchange',    onPointerLockChange);
+    document.addEventListener('webkitpointerlockchange', onPointerLockChange);
+
+    function requestLock() {
+      if (getPointerLockElement_() !== canvas) {
+        try {
+          requestPointerLock_.call(canvas);
+        } catch (e) {
+          // requestPointerLock may throw if called outside a user-gesture context
+          console.warn('[CC] requestPointerLock failed:', e);
+        }
+      }
+    }
+
+    overlay.addEventListener('click', requestLock);
+    canvas.addEventListener('click',  requestLock);
+
+    // Show the overlay immediately so the user knows to click before the game loads
+    overlay.classList.add('visible');
+  }
+
   var script = document.createElement('script');
   script.async  = true;
   script.src    = 'https://cs.classicube.net/client/latest/ClassiCube.js';
@@ -866,7 +983,6 @@ function startEngine_(args) {
     setLog('Failed to load game script. Check your internet connection.');
   };
   document.body.appendChild(script);
-  state.gameActive = true;
 }
 
 /** Fit the canvas inside its wrapper maintaining a 16:9 aspect ratio. */
@@ -950,10 +1066,20 @@ window.addEventListener('resize', function () {
 
 // Keyboard shortcuts for the login form
 document.getElementById('login-pass').addEventListener('keydown', function (e) {
-  if (e.key === 'Enter') document.getElementById('btn-login').click();
+  if (e.key === 'Enter') {
+    var f2fa = document.getElementById('field-2fa');
+    if (f2fa.style.display !== 'none') {
+      document.getElementById('login-2fa').focus();
+    } else {
+      document.getElementById('btn-login').click();
+    }
+  }
 });
 document.getElementById('login-user').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') document.getElementById('login-pass').focus();
+});
+document.getElementById('login-2fa').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('btn-login').click();
 });
 </script>
 </body>
