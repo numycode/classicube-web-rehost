@@ -791,12 +791,17 @@ function joinServer(btn) {
  * For singleplayer, pass empty strings for mppass/ip/port.
  */
 function launchGame(username, mppass, ip, port, label) {
+  // Guard against duplicate launches (e.g. double-click on Play/Join).
+  if (state.gameActive) return;
+  state.gameActive = true;
+
   var args;
   if (ip) {
     // Validate before building the proxy URL
     var safeIp   = String(ip).replace(/[^A-Za-z0-9.\-]/g, '');
     var safePort = String(port).replace(/[^0-9]/g, '');
     if (!safeIp || !safePort) {
+      state.gameActive = false;
       setLog('Invalid server address. Cannot connect.');
       return;
     }
@@ -978,7 +983,6 @@ function startEngine_(args) {
     setLog('Failed to load game script. Check your internet connection.');
   };
   document.body.appendChild(script);
-  state.gameActive = true;
 }
 
 /** Fit the canvas inside its wrapper maintaining a 16:9 aspect ratio. */

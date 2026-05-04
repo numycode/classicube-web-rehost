@@ -17,9 +17,12 @@ var TEXTURE_PACK_TTL = 86400;  // seconds — texture pack is cached for 24 hour
 var RATE_LIMIT_MAX   = 5;      // max CC login attempts per window
 var RATE_LIMIT_TTL   = 600;    // seconds — rate-limit window (10 minutes)
 var MAX_PASSWORD_LEN = 200;    // generous upper bound; CC passwords are typically much shorter
+var MAX_LOGIN_CODE_LEN = 32;   // generous upper bound for 2FA/email codes
 
 // Valid ClassiCube username: 1–16 chars, letters/digits/underscores
 var USERNAME_RE  = /^[A-Za-z0-9_]{1,16}$/;
+// Valid 2FA/email code: digits only (ClassiCube sends numeric codes)
+var LOGIN_CODE_RE = /^[0-9]+$/;
 // Server hashes returned by the ClassiCube API are 32-char hex strings
 var SERVER_HASH_RE = /^[0-9a-f]{32}$/i;
 
@@ -111,9 +114,17 @@ function loginToClassiCube(username, password, loginCode) {
 
     // ---- Step 2: submit credentials ----
     var postPayload = { username: username, password: password, token: getJson.token };
-    var trimmedCode = loginCode && typeof loginCode === 'string' ? loginCode.trim() : '';
-    if (trimmedCode.length > 0) {
-      postPayload.login_code = trimmedCode;
+    if (loginCode !== undefined && loginCode !== null) {
+      if (typeof loginCode !== 'string') {
+        return { success: false, error: 'Invalid 2FA code.' };
+      }
+      var trimmedCode = loginCode.trim();
+      if (trimmedCode.length > 0) {
+        if (trimmedCode.length > MAX_LOGIN_CODE_LEN || !LOGIN_CODE_RE.test(trimmedCode)) {
+          return { success: false, error: 'Invalid 2FA code. Only digits are accepted.' };
+        }
+        postPayload.login_code = trimmedCode;
+      }
     }
     var postResp = UrlFetchApp.fetch(CC_BASE + '/api/login/', {
       method:             'post',
