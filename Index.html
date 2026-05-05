@@ -797,7 +797,7 @@ function launchGame(username, mppass, ip, port, label) {
 
   var args;
   if (ip) {
-    // Validate before building the proxy URL
+    // Validate before building the WebSocket address
     var safeIp   = String(ip).replace(/[^A-Za-z0-9.\-]/g, '');
     var safePort = String(port).replace(/[^0-9]/g, '');
     if (!safeIp || !safePort) {
@@ -806,11 +806,10 @@ function launchGame(username, mppass, ip, port, label) {
       return;
     }
     // ClassiCube's Emscripten interop builds the WebSocket URL as:
-    //   wss://{parts[0]}:{port}/{parts[1]}/...
-    // Route multiplayer through classicube.net's WebSocket-to-TCP proxy by
-    // encoding the real server address into the path on web.classicube.net:443.
-    var proxyAddr = 'web.classicube.net/' + safeIp + '/' + safePort;
-    args = [username, mppass, proxyAddr, '443'];
+    //   wss://{addr}:{port}/
+    // Most ClassiCube servers (MCGalaxy etc.) natively accept WSS on their
+    // game port, so we connect directly rather than routing through a proxy.
+    args = [username, mppass, safeIp, safePort];
   } else {
     args = [username];
   }
@@ -850,6 +849,8 @@ function launchGame(username, mppass, ip, port, label) {
 /**
  * Intercept XHR/fetch calls for the texture-pack path and redirect them to
  * either the in-memory Blob URL (preferred) or classicube.net (fallback).
+ * Also intercepts ClassiCube.wasm fetches and serves them via the GAS proxy
+ * so that cs.classicube.net does not need to be reachable from the browser.
  * Must be called before ClassiCube.js is loaded.
  */
 function patchRequests_() {
@@ -865,6 +866,51 @@ function patchRequests_() {
            (u === '/static/default.zip' || u.slice(-12) === '/default.zip');
   }
 
+  function isWasm_(u) {
+    return typeof u === 'string' && u.indexOf('ClassiCube.wasm') !== -1;
+  }
+
+  // Build a Response object carrying the raw WASM bytes.
+  function makeWasmResponse_(buffer) {
+    return new Response(buffer, {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'Content-Type': 'application/wasm' }
+    });
+  }
+
+  // Fetch ClassiCube.wasm via the GAS server-side proxy and resolve with a
+  // proper binary Response.  Falls back to a direct fetch if the proxy fails.
+  function fetchWasmViaGas_(input, init) {
+    // Reuse a previously decoded ArrayBuffer to avoid duplicate GAS calls.
+    if (window.__ccWasmBuffer) {
+      return Promise.resolve(makeWasmResponse_(window.__ccWasmBuffer));
+    }
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(function (b64) {
+          if (b64) {
+            try {
+              var bstr  = atob(b64);
+              var bytes = new Uint8Array(bstr.length);
+              for (var i = 0; i < bstr.length; i++) bytes[i] = bstr.charCodeAt(i);
+              window.__ccWasmBuffer = bytes.buffer;
+              resolve(makeWasmResponse_(bytes.buffer));
+              return;
+            } catch (e) {
+              console.warn('[CC] WASM decode error:', e);
+            }
+          }
+          // GAS proxy returned nothing — try directly (may fail if blocked).
+          origFetch.apply(window, [input, init]).then(resolve).catch(reject);
+        })
+        .withFailureHandler(function () {
+          origFetch.apply(window, [input, init]).then(resolve).catch(reject);
+        })
+        .getGameWasm();
+    });
+  }
+
   var origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
     if (isTexturePack_(url)) arguments[1] = textureUrl_();
@@ -874,14 +920,24 @@ function patchRequests_() {
   if (window.fetch) {
     var origFetch = window.fetch;
     window.fetch = function (input, init) {
-      var resolvedUrl = isTexturePack_(input) ? textureUrl_() : input;
-      return origFetch.call(this, resolvedUrl, init);
+      var url = typeof input === 'string' ? input
+              : (input && input.url) ? input.url : String(input);
+      if (isTexturePack_(url)) {
+        return origFetch.call(this, textureUrl_(), init);
+      }
+      if (isWasm_(url)) {
+        return fetchWasmViaGas_(input, init);
+      }
+      return origFetch.apply(this, arguments);
     };
   }
 }
 
 /**
- * Initialise the Emscripten Module object and inject ClassiCube.js.
+ * Initialise the Emscripten Module object and load ClassiCube.js.
+ * ClassiCube.js is fetched via the GAS server-side proxy so that
+ * cs.classicube.net does not need to be reachable from the browser.
+ * Falls back to a direct <script> tag if the proxy call fails.
  */
 function startEngine_(args) {
   resizeCanvas_();
@@ -911,6 +967,12 @@ function startEngine_(args) {
         left ? 'Preparing… (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')'
              : 'All downloads complete.'
       );
+    },
+    // Force absolute URLs for all Emscripten asset loads (ClassiCube.wasm etc.)
+    // so that our fetch patch can intercept them regardless of how ClassiCube.js
+    // was loaded (eval vs. <script> tag, which affect document.currentScript).
+    locateFile: function (path /*, scriptDir */) {
+      return 'https://cs.classicube.net/client/latest/' + path;
     }
   };
 
@@ -961,10 +1023,25 @@ function startEngine_(args) {
     function requestLock() {
       if (getPointerLockElement_() !== canvas) {
         try {
-          requestPointerLock_.call(canvas);
+          var p = requestPointerLock_.call(canvas);
+          // Modern browsers return a Promise; handle rejection (e.g. iframe
+          // permission policy denying pointer lock) so the overlay does not
+          // permanently block the game canvas.
+          if (p && typeof p.catch === 'function') {
+            p.catch(function (err) {
+              console.warn('[CC] Pointer lock denied:', err);
+              // Permanently hide the overlay — pointer lock is unavailable.
+              overlay.classList.remove('visible');
+              overlay.style.display = 'none';
+              overlay.removeEventListener('click', requestLock);
+              canvas.removeEventListener('click',  requestLock);
+            });
+          }
         } catch (e) {
-          // requestPointerLock may throw if called outside a user-gesture context
-          console.warn('[CC] requestPointerLock failed:', e);
+          // Synchronous throw (older browsers or out-of-gesture context).
+          console.warn('[CC] requestPointerLock threw:', e);
+          overlay.classList.remove('visible');
+          overlay.style.display = 'none';
         }
       }
     }
@@ -976,11 +1053,39 @@ function startEngine_(args) {
     overlay.classList.add('visible');
   }
 
+  // Load ClassiCube.js via the GAS proxy so cs.classicube.net does not need
+  // to be reachable from the browser.  On failure the direct URL is used as
+  // a best-effort fallback.
+  google.script.run
+    .withSuccessHandler(function (jsCode) {
+      if (jsCode) {
+        try {
+          // Indirect eval runs in global scope so that Emscripten's
+          // `typeof Module != 'undefined'` check finds window.Module.
+          // eslint-disable-next-line no-eval
+          (0, eval)(jsCode);
+        } catch (e) {
+          console.error('[CC] Error evaluating ClassiCube.js:', e);
+          setLog('Game load error. Please refresh and try again.');
+        }
+      } else {
+        loadClassiCubeDirect_();
+      }
+    })
+    .withFailureHandler(loadClassiCubeDirect_)
+    .getGameScript();
+}
+
+/**
+ * Fallback: inject ClassiCube.js as a <script> tag pointing directly at
+ * cs.classicube.net.  This may fail if the domain is blocked.
+ */
+function loadClassiCubeDirect_() {
   var script = document.createElement('script');
-  script.async  = true;
-  script.src    = 'https://cs.classicube.net/client/latest/ClassiCube.js';
+  script.async   = true;
+  script.src     = 'https://cs.classicube.net/client/latest/ClassiCube.js';
   script.onerror = function () {
-    setLog('Failed to load game script. Check your internet connection.');
+    setLog('Failed to load game. cs.classicube.net may be blocked.');
   };
   document.body.appendChild(script);
 }

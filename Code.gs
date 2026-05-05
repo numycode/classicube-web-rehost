@@ -26,6 +26,10 @@ var LOGIN_CODE_RE = /^[0-9]+$/;
 // Server hashes returned by the ClassiCube API are 32-char hex strings
 var SERVER_HASH_RE = /^[0-9a-f]{32}$/i;
 
+// URLs for ClassiCube's web client build
+var CC_JS_URL   = 'https://cs.classicube.net/client/latest/ClassiCube.js';
+var CC_WASM_URL = 'https://cs.classicube.net/client/latest/ClassiCube.wasm';
+
 // ============================================================
 // Web-app entry point
 // ============================================================
@@ -381,6 +385,44 @@ function checkRateLimit_(email) {
   var ttl = RATE_LIMIT_TTL - (now - record.firstAttempt);
   cache.put(key, JSON.stringify(record), ttl > 0 ? ttl : RATE_LIMIT_TTL);
   return { allowed: true };
+}
+
+// ============================================================
+// Game-asset proxy (bypasses browser-side classicube.net blocks)
+// ============================================================
+
+/**
+ * Fetch ClassiCube.js from cs.classicube.net and return its text content.
+ * Called by the front-end so the browser never has to reach cs.classicube.net
+ * directly (which may be blocked for some users).
+ * Returns null on failure.
+ */
+function getGameScript() {
+  try {
+    var resp = UrlFetchApp.fetch(CC_JS_URL, { muteHttpExceptions: true });
+    if (resp.getResponseCode() === 200) return resp.getContentText();
+    console.error('getGameScript: unexpected status ' + resp.getResponseCode());
+  } catch (err) {
+    console.error('getGameScript error: ' + err);
+  }
+  return null;
+}
+
+/**
+ * Fetch ClassiCube.wasm from cs.classicube.net and return it as a base64 string.
+ * Returns null on failure (e.g. network error or file too large for transfer).
+ */
+function getGameWasm() {
+  try {
+    var resp = UrlFetchApp.fetch(CC_WASM_URL, { muteHttpExceptions: true });
+    if (resp.getResponseCode() === 200) {
+      return Utilities.base64Encode(resp.getContent());
+    }
+    console.error('getGameWasm: unexpected status ' + resp.getResponseCode());
+  } catch (err) {
+    console.error('getGameWasm error: ' + err);
+  }
+  return null;
 }
 
 // ---- Cookie utilities ----
